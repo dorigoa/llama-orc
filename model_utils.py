@@ -41,8 +41,16 @@ def discover_available_models( ) -> dict[str, ModelConfig]:
     )
 
     for m in model_list:
+
+        pmmproj = find_mmproj_file( m )
+        if pmmproj:
+            mmproj = str(pmmproj)
+        else:
+            mmproj = None
+
         models[m.name] = {
-            "path": Path(settings.MODEL_BASE_DIR) / m / f"{m.name}.gguf",
+            "path": str(Path(settings.MODEL_BASE_DIR) / m / f"{m.name}.gguf"),
+            "mmproj": mmproj,
             "ctxsize": 0,
             "shard_balance": "1,1",
             "top_p": 0.8,
@@ -66,6 +74,13 @@ def discover_available_models( ) -> dict[str, ModelConfig]:
     #     }
 
     return models
+
+def find_mmproj_file(directory: str | Path) -> Path | None:
+    base = Path(directory)
+    for p in base.iterdir():
+        if p.is_file() and p.name.startswith("mmproj"):
+            return p
+    return None
 
 #_____________________________________________________________________________
 # def default_context_size_for_model(model_name: Optional[str]) -> int:
