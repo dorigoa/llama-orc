@@ -327,7 +327,7 @@ class LlamaManager:
         emit(f"Run local      : {run_local_only}", ui_log)
         emit(f"RPC server(s)  : {",".join( utils.get_all_rpc_servers() )}", ui_log)
         emit(f"Selected model : {M.model_name}", ui_log)
-        emit(f"Configured path: {M.model_path}", ui_log)
+        emit(f"Configured path: {str(M.model_path)}", ui_log)
         #emit(f"Model folder   : {model_folder}", ui_log)
         emit(f"Context size   : {M.ctxsize}", ui_log)
         emit(f"Temperature    : {M.temperature}", ui_log)
@@ -363,6 +363,7 @@ class LlamaManager:
             )
 
             cmd = [str(arg) for arg in cmd]
+            logger.info(f"DEBUG = cmd={cmd}")
             emit(f"-> Launching command: {" ".join(shlex.quote(str(x)) for x in cmd)}", ui_log)
             emit("->", ui_log)
             emit("->", ui_log)
