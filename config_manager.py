@@ -10,9 +10,6 @@ class Settings:
     UI_TITLE: str = "LLama Console by Alvise Dorigo (alvise72@gmail.com)"
     UI_HOST: str = "127.0.0.1"
     UI_PORT: int = 8080
-    #LLAMA_SERVER_HOST: str = "192.168.1.191"
-    #LLAMA_SERVER_PORT: int = 8088
-    #LLAMA_SERVER_BASEURL: str = f"http://{LLAMA_SERVER_HOST}:{LLAMA_SERVER_PORT}"
     LLAMA_READY_TIMEOUT_SECONDS: int = 600
     RPC_SERVERS: list[Server] = field(default_factory=lambda: [
         Server(
@@ -41,7 +38,7 @@ class Settings:
             bindaddress="127.0.0.1",
             platform="Darwin",
             cachepath=None,
-            binarypath="/usr/local/bin/llama-server",
+            binarypath=Path("/usr/local/bin/llama-server"),
             type=ServerType.LLAMASERVER
         ))
     

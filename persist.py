@@ -1,6 +1,10 @@
 import json
+from json import JSONDecodeError
+from config_manager import get_settings
 from pathlib import Path
 from typing import Any, Dict
+
+from typing import Optional
 
 JsonDict = Dict[str, Any]
 
@@ -10,35 +14,24 @@ class JsonParams:
 
     #___________________________________________________________________________________
     def load_params(self) -> Dict[str, JsonDict]:
-        """
-        Load all parameters from the JSON file.
-
-        The file must contain a JSON object whose values are JSON objects.
-        Returns an empty dict if the file does not exist yet.
-        """
         if not self.path.exists():
             return {}
 
         with self.path.open("r", encoding="utf-8") as f:
             try:
                 data = json.load(f)
+            except JSONDecodeError as je:
+                raise Exception(f"Couldn't decode the JSON: {je}")
             except Exception as e:
-                #return {}
-                raise Exception(f"Couldn't decode the JSON (call to json.load(..) failed)")
+                raise Exception(f"Couldn't decode the JSON (generic exception): {e}")
 
         if not isinstance(data, dict):
-            raise ValueError(f"Cannot find a contain a JSON object")
+            raise ValueError(f"JSON file {self.path} must contain a top-level object")
 
         return data
 
     #___________________________________________________________________________________
     def save_param(self, key: str, value: JsonDict) -> None:
-        """
-        Save or update a single key/dict pair.
-        Creates the JSON file if it does not exist.
-
-        The value must be a JSON-serializable dict.
-        """
         if not isinstance(key, str) or not key:
             raise ValueError("key must be a non-empty string")
 
@@ -63,3 +56,11 @@ class JsonParams:
             f.write("\n")
 
         tmp_path.replace(self.path)
+
+_jsonparam : Optional[JsonParams] = None
+
+def get_params_handler( ) -> JsonParams:
+    global _jsonparam
+    if _jsonparam is None:
+        _jsonparam = JsonParams( get_settings().PERSIST_FILE )
+    return _jsonparam

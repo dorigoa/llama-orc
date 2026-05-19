@@ -1,81 +1,107 @@
-from typing import Any, Optional
 from dataclasses import dataclass, field
-from typing import TypedDict
 from pathlib import Path
-
+from object_models import Model
+import persist
 from config_manager import get_settings
 
 settings = get_settings()
+    
+_AVAILABLE_MODELS: list[Model] = []
 
 #_____________________________________________________________________________
-class ModelConfig(TypedDict):
-    path: str
-    ctxsize: int
-    temperature: float
-    top_p: float
-    top_k: int
-    shard_balance: str
-    last_started: bool
+def get_model_by_name( name: str ) -> Model:
+    for model in _AVAILABLE_MODELS:
+        if name == model.model_name:
+            return model
+    return None
+    
+#_____________________________________________________________________________
+def get_last_started_model( ) -> Model:
+    for m in _AVAILABLE_MODELS:
+        if m.last_started:
+            return m
+    return _AVAILABLE_MODELS[0]
+    
+#_____________________________________________________________________________
+def get_available_model_names( refresh: bool = False ) -> list[str]:
+    #global _AVAILABLE_MODELS
+    # if refresh:
+    #     _AVAILABLE_MODELS = _discover_available_models( )
+    # names = []
+    # for m in get_available_models():#_AVAILABLE_MODELS:
+    #     names.append( m.model_name )
+    # return names
+    return [m.model_name for m in get_available_models(refresh)]
 
 #_____________________________________________________________________________
-def _get_configured_value(configured: Any, key: str, cast_type=float, default=0):
-    if isinstance(configured, dict):
-        value = configured.get(key, default)
-        try:
-            return cast_type(value)
-        except (TypeError, ValueError):
-            return default
-    return default
+def get_available_models( refresh: bool = False ) -> list[Model]:
+    global _AVAILABLE_MODELS
+    if refresh:
+        _AVAILABLE_MODELS = _discover_available_models( )
+    return _AVAILABLE_MODELS
 
 #_____________________________________________________________________________
-def discover_available_models( ) -> dict[str, ModelConfig]:
-    models: dict[str, ModelConfig] = {}
+def _discover_available_models( ) -> list[Model]:
+
+    #
+    # First: model base dir (defined in settings) is scanned
+    # Second: persist json file is scanned
+    # 
+    # If a model from persist file is in the list models retrieved from dir
+    # extra params are set, otherwise settings defaults are used.
+
+    # READ available models from dir
     root = Path(settings.MODEL_BASE_DIR)
-
     if not root.is_dir():
-        return models
-
+        return []
     model_list = sorted(
         (p for p in root.iterdir() if p.is_dir()),
         key=lambda p: p.name.lower()
     )
 
+    models = []
+
+    # READ models extra param from persist
+    data = persist.get_params_handler().load_params()
+
+
     for m in model_list:
+        pmmproj = _find_mmproj_file( m )
+        #if pmmproj:
+        #    mmproj = pmmproj
+        #else:
+        #    mmproj = None
 
-        pmmproj = find_mmproj_file( m )
-        if pmmproj:
-            mmproj = str(pmmproj)
+        if m.name in data:
+            M = Model(
+                model_name    = m.name,
+                model_path    = m / f"{m.name}.gguf",
+                mmproj_path   = pmmproj,
+                ctxsize       = data[m.name]['context_size'],
+                temperature   = data[m.name]['temperature'],
+                top_p         = data[m.name]['top_p'],
+                top_k         = data[m.name]['top_k'],
+                shard_balance = data[m.name]['shard_balance'],
+                last_started  = data[m.name]['last_started']
+            )
         else:
-            mmproj = None
-
-        models[m.name] = {
-            "path": str(Path(settings.MODEL_BASE_DIR) / m / f"{m.name}.gguf"),
-            "mmproj": mmproj,
-            "ctxsize": 0,
-            "shard_balance": "1,1",
-            "top_p": 0.8,
-            "top_k": 50,
-            "temperature": 0.8,
-            "last_started": False
-        }
-
-    # for model_dir in sorted((p for p in root.iterdir() if p.is_dir()), key=lambda p: p.name.lower()):
-    #     gguf_files = sorted(model_dir.glob("*.gguf"), key=lambda p: p.name.lower())
-    #     main_candidates = [p for p in gguf_files if "mmproj" not in p.name.lower()]
-    #     if not main_candidates:
-    #         continue
-
-    #     models[model_dir.name] = {
-    #         "path": str(main_candidates[0]),
-    #         "ctxsize": 0,
-    #         "shard_balance": "1,1",
-    #         "top_p": 0.8,
-    #         "top_k": 50
-    #     }
+            M = Model(
+                model_name      = m,
+                model_path      = m / f"{m.name}.gguf",
+                mmproj_path     = pmmproj,
+                ctxsize         = settings.DEFAULT_CONTEXT_SIZE,
+                temperature     = settings.DEFAULT_TEMP,
+                top_p           = settings.DEFAULT_TOP_P,
+                top_k           = settings.DEFAULT_TOP_K,
+                shard_balance   = "1,1",
+                last_started    = False
+            )
+        models.append(M)
 
     return models
 
-def find_mmproj_file(directory: str | Path) -> Path | None:
+#_____________________________________________________________________________
+def _find_mmproj_file(directory: str | Path) -> Path | None:
     base = Path(directory)
     for p in base.iterdir():
         if p.is_file() and p.name.startswith("mmproj"):
@@ -203,6 +229,4 @@ def find_mmproj_file(directory: str | Path) -> Path | None:
 #                 return model_id.strip()
 #     return None
 
-
-
-AVAILABLE_MODELS: dict[str, ModelConfig] = discover_available_models( )
+_AVAILABLE_MODELS: list[Model] = _discover_available_models( )

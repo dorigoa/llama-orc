@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-
+from object_models import Model
 import re
 from nicegui import ui
 
@@ -20,7 +20,7 @@ from logging_utils import emit, setup_console_logging
 import model_utils
 import model_finder
 import utils
-from persist import JsonParams
+import persist
 
 settings = get_settings()
 
@@ -31,26 +31,22 @@ LLAMA_READY_LOG_MARKERS = (
     "all slots are idle",
 )
 
-params = JsonParams( settings.PERSIST_FILE )
+#params = JsonParams( settings.PERSIST_FILE )
 
 #_____________________________________________________________________________
 def notify_user(message: str, *, type: str = "info") -> None:
-    """Show a persistent, manually dismissible NiceGUI notification."""
     try:
         ui.notify(message, type=type, timeout=0, close_button=True)
     except TypeError:
-        # Compatibility fallback for older NiceGUI versions without close_button.
         ui.notify(message, type=type, timeout=0)
 
 #_____________________________________________________________________________
 def is_llama_ready_log_line(text: str) -> bool:
-    """Return True when llama-server output indicates that serving is actually ready."""
     lowered = text.lower()
     return any(marker in lowered for marker in LLAMA_READY_LOG_MARKERS)
 
 #_____________________________________________________________________________
 def ui_log(message: str) -> None:
-    """Write to NiceGUI log widget if the browser client still exists."""
     try:
         log_area.push(str(message))
     except RuntimeError as exc:
@@ -59,69 +55,63 @@ def ui_log(message: str) -> None:
         raise
 
 #_____________________________________________________________________________
-def available_model_names() -> list[str]:
-    model_utils.AVAILABLE_MODELS = model_utils.discover_available_models(settings.MODEL_BASE_DIR)
-    return sorted(model_utils.AVAILABLE_MODELS.keys(), key=str.lower)
+# def persisted_data_for_model(model_name: Optional[str]) -> dict | None: #-> Optional[dict]:
+    
+#     if not model_name:
+#         return None
+
+#     try:
+#         persisted = params.load_params()
+#     except Exception as exc:
+#         emit(f"Could not load persisted parameters from {settings.PERSIST_FILE}: {exc}", None)
+#         return None
+
+#     if model_name not in persisted:
+#         return None
+
+#     try:
+#         return persisted[model_name]
+#     except (TypeError, ValueError):
+#         emit(f"Ignoring invalid persisted data for {model_name!r}: {persisted[model_name]!r}", None)
+#         return None
 
 #_____________________________________________________________________________
-def persisted_data_for_model(model_name: Optional[str]) -> dict | None: #-> Optional[dict]:
-    """Return the context size stored in persist.json for model_name, if present and valid."""
-    if not model_name:
-        return None
+# def selected_data_for_model(model_name: Optional[str]) -> tuple[int, float, float, int, str, bool]:
+    
+#     persisted_data = persisted_data_for_model(model_name)
+#     if persisted_data is not None:
+#         return persisted_data['context_size'], persisted_data['temperature'], persisted_data['top_p'], persisted_data['top_k'], persisted_data['shard_balance']
+#     return model_utils.default_context_size_for_model(model_name), model_utils.default_temp_for_model(model_name), model_utils.default_top_p_for_model( model_name ), model_utils.default_top_k_for_model( model_name ), model_utils.default_shard_balance_for_model( model_name )
 
-    try:
-        persisted = params.load_params()
-    except Exception as exc:
-        emit(f"Could not load persisted parameters from {settings.PERSIST_FILE}: {exc}", None)
-        return None
-
-    if model_name not in persisted:
-        return None
-
-    try:
-        return persisted[model_name]
-    except (TypeError, ValueError):
-        emit(f"Ignoring invalid persisted data for {model_name!r}: {persisted[model_name]!r}", None)
-        return None
+def update_data_from_modelname( modelname: str ) -> None:
+    update_data_from_model( model_utils.get_model_by_name( modelname ) )
 
 #_____________________________________________________________________________
-def selected_data_for_model(model_name: Optional[str]) -> tuple[int, float, float, int, str]:
-    """Return persisted ctxsize when available, otherwise configured/default ctxsize."""
-    persisted_data = persisted_data_for_model(model_name)
-    if persisted_data is not None:
-        return persisted_data['context_size'], persisted_data['temperature'], persisted_data['top_p'], persisted_data['top_k'], persisted_data['shard_balance']
-    return model_utils.default_context_size_for_model(model_name), model_utils.default_temp_for_model(model_name), model_utils.default_top_p_for_model( model_name ), model_utils.default_top_k_for_model( model_name ), model_utils.default_shard_balance_for_model( model_name )
+def update_data_from_model( model: Model ) -> None:
+    
+    #M = model_utils.get_model_by_name( modelname )
 
-#_____________________________________________________________________________
-def update_data_from_model() -> None:
-    """Set context combo box from persist.json, then config/default fallback."""
-    model_name = str(model_select.value) if model_select.value else None
-    ctx, temp, top_p, top_k, _shard_balance = selected_data_for_model(model_name)
-    context_select.set_value( ctx )
-    temperature_select.set_value(f"{float(temp):.1f}")
-    top_p_input.set_value(f"{float(top_p):.1f}")
-    top_k_input.set_value(f"{int(top_k)}")
+    if M:
+        context_select.set_value( M.ctxsize )
+        temperature_select.set_value(f"{float(M.temperature):.1f}")
+        top_p_input.set_value(f"{float(M.top_p):.1f}")
+        top_k_input.set_value(f"{int(M.top_k)}")
+    else:
+        context_select.set_value( settings.DEFAULT_CONTEXT_SIZE )
+        temperature_select.set_value(f"{float(settings.DEFAULT_TEMP):.1f}")
+        top_p_input.set_value(f"{float(settings.DEFAULT_TOP_P):.1f}")
+        top_k_input.set_value(f"{int(settings.DEFAULT_TOP_K)}")
 
 #_____________________________________________________________________________
 def refresh_model_list() -> None:
-    """Reload available models and refresh the model select widget."""
-    current_model = str(model_select.value) if model_select.value else None
-    model_names = available_model_names()
+    models = model_utils.get_available_model_names( refresh = False ) # refresh has been already done in the previous call
 
-    if current_model in model_names:
-        selected_model = current_model
-    else:
-        selected_model = next(iter(model_names), None)
+    selected_model = model_utils.get_last_started_model()
+    model_select.set_options(models, value=selected_model)
 
-    model_select.set_options(model_names, value=selected_model)
-
-    if selected_model:
-        update_data_from_model()
-        emit(f"Model list refreshed: {len(model_names)} models found", ui_log)
-        notify_user(f"Model list refreshed: {len(model_names)} models found", type="positive")
-    else:
-        emit("Model list refreshed: no models found", ui_log)
-        notify_user("Model list refreshed: no models found", type="warning")
+    update_data_from_model( selected_model )
+    emit(f"Model list refreshed: {len(models)} models found", ui_log)
+    notify_user(f"Model list refreshed: {len(models)} models found", type="positive")
 
 #_____________________________________________________________________________
 def _run_command(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -176,33 +166,33 @@ def _json_get(url: str, timeout: float = 2.0) -> dict[str, Any]:
         return json.loads(raw)
 
 #_____________________________________________________________________________
-def _match_configured_model(detected_model: str) -> str:
-    detected = detected_model.strip()
-    detected_path = Path(detected)
-    detected_name = detected_path.name
-    detected_stem = detected_path.stem
+# def _match_configured_model(detected_model: str) -> str:
+#     detected = detected_model.strip()
+#     detected_path = Path(detected)
+#     detected_name = detected_path.name
+#     detected_stem = detected_path.stem
 
-    for logical_name, configured in model_utils.AVAILABLE_MODELS.items():
-        try:
-            main_path = model_utils.configured_model_path(configured)
-        except TypeError as exc:
-            emit(f"Skipping invalid model_utils.AVAILABLE_MODELS entry {logical_name!r}: {exc}", None)
-            continue
+#     for logical_name, configured in model_utils.get_available_models(): #AVAILABLE_MODELS.items():
+#         try:
+#             main_path = model_utils.configured_model_path(configured)
+#         except TypeError as exc:
+#             emit(f"Skipping invalid model entry {logical_name!r}: {exc}", None)
+#             continue
 
-        configured_path = Path(main_path).expanduser()
-        folder = model_utils.path_to_model_folder(main_path)
-        candidates = {
-            logical_name,
-            str(configured_path),
-            configured_path.name,
-            configured_path.stem,
-            str(folder),
-            folder.name,
-        }
-        if detected in candidates or detected_name in candidates or detected_stem in candidates:
-            return logical_name
+#         configured_path = Path(main_path).expanduser()
+#         folder = model_utils.path_to_model_folder(main_path)
+#         candidates = {
+#             logical_name,
+#             str(configured_path),
+#             configured_path.name,
+#             configured_path.stem,
+#             str(folder),
+#             folder.name,
+#         }
+#         if detected in candidates or detected_name in candidates or detected_stem in candidates:
+#             return logical_name
 
-    return detected
+#     return detected
 
 #_____________________________________________________________________________
 def probe_existing_llama_server_sync() -> tuple[bool, Optional[str], Optional[str], Optional[str]]:
@@ -231,19 +221,10 @@ async def detect_existing_llama_server(*, verbose: bool = True) -> bool:
     running, detected_model, url, error = await asyncio.to_thread(probe_existing_llama_server_sync)
 
     if running:
-        display_model = _match_configured_model(detected_model) if detected_model else "unknown model"
+        display_model = detected_model if detected_model else "unknown model"
         
         chat_url = await get_browser_based_llama_url()
 
-        #chat_url = ui.context.client.request.url
-        
-        #logger.info(f"DEBUG chat url before={chat_url}")
-        #emit(f"DEBUG chat url before={chat_url}", ui_log)
-        # if "127.0.0.1" not in str(chat_url):
-        #     chat_url=chat_url.replace("http","https")
-        #     chat_url=chat_url.replace(":8088","")
-        # #emit(f"DEBUG chat url after={chat_url}", ui_log)
-        #logger.info(f"DEBUG chat url after={chat_url}")
         status_label.set_text("llama-server status: already running")
         status_detail_label.set_text(
             f"Detected endpoint: {chat_url} | Model: {display_model} "
@@ -339,9 +320,6 @@ class LlamaManager:
             notify_user(msg, type="negative")
             return False
 
-        #all_endpoints = utils.get_all_rpc_servers()
-        #all_rpc = ",".join(all_endpoints)
-
         files = model_finder.discover_model_files(model_folder)
         
         emit("------ Start requested ------", ui_log)
@@ -411,7 +389,18 @@ class LlamaManager:
 
             self._ready_event = asyncio.Event()
             self._ready_reason = None
-            self._reader_task = asyncio.create_task(self._read_process_output(model_name, context_size, temperature, top_p, top_k, shard_balance, self.process))
+            M = Model(
+                model_name=model_name,
+                model_path=configured_path,
+                mmproj_path=files.mmproj.name,
+                ctxsize=context_size,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                shard_balance=shard_balance,
+                last_started=False,
+            )
+            self._reader_task = asyncio.create_task(self._read_process_output(M, self.process))
 
             await asyncio.sleep(0.5)
             if self.process.returncode is not None:
@@ -463,12 +452,7 @@ class LlamaManager:
             return False
 
     #_____________________________________________________________________________________
-    async def _read_process_output(self, model_name: str, 
-                                   context_size: int, 
-                                   temperature: float,
-                                   top_p: float,
-                                   top_k: int,
-                                   shard_balance: str,
+    async def _read_process_output(self, M: Model,
                                    process: asyncio.subprocess.Process) -> None:
         assert process.stdout is not None
 
@@ -487,18 +471,20 @@ class LlamaManager:
                             self._ready_event.set()
                             emit(f"llama-server readiness confirmed by log line: {text}", ui_log)
                             model_persist_data = {
-                                "context_size": context_size,
-                                "temperature": temperature,
-                                "top_p": top_p,
-                                "top_k": top_k,
-                                "shard_balance": shard_balance
+                                "context_size": M.ctxsize,#context_size,
+                                "temperature": M.temperature,#temperature,
+                                "top_p": M.top_p,
+                                "top_k": M.top_k,
+                                "shard_balance": M.shard_balance,
+                                "last_started": True,
                             }
-                            params.save_param(model_name, model_persist_data)
+                            persist.get_params_handler().save_param(M.model_name, model_persist_data)
+                            
 
             return_code = await process.wait()
             emit(f"llama-server exited with return code {return_code}", ui_log)
             status_label.set_text("llama-server status: stopped")
-            status_detail_label.set_text(f"Last model: {model_name} | Return code: {return_code}")
+            status_detail_label.set_text(f"Last model: {M.model_name} | Return code: {return_code}")
 
         except asyncio.CancelledError:
             emit("Log reader task cancelled", ui_log)
@@ -653,9 +639,6 @@ async def ping_servers() -> dict[str, float]:
     for server in settings.RPC_SERVERS + [settings.LLAMA_SERVER]:
         servers_to_ping.append(server.hostname)
     
-    # Add main llama server
-    #servers_to_ping.append(settings.LLAMA_SERVER)
-    
     # Ping each server
     for server in servers_to_ping:
         try:
@@ -693,7 +676,6 @@ async def refresh_ping_status() -> None:
     await update_ping_status()
 
 #_____________________________________________________________________________
-# Global dictionary to store ping labels
 ping_labels: dict[str, ui.label] = {}
 
 #_____________________________________________________________________________
@@ -726,7 +708,6 @@ with ui.column().classes("w-full max-w-4xl mx-auto p-4 gap-4"):
             asyncio.create_task(refresh_ping_status())
 
         ui.timer(0.2, _schedule_ping_refresh, once=True)
-
         ui.timer(20.0, _schedule_ping_refresh)
     ####################################
 
@@ -736,35 +717,36 @@ with ui.column().classes("w-full max-w-4xl mx-auto p-4 gap-4"):
         with ui.row().classes("w-full gap-4 mt-4 items-end"):
 
             model_select = ui.select(
-                options=available_model_names(),#next(iter(available_model_names()), None),
-                value=next(iter(available_model_names()), None),
+                options=model_utils.get_available_model_names( refresh = False ),#available_model_names(),#next(iter(available_model_names()), None),
+                value=model_utils.get_last_started_model( ).model_name,
                 label="Select a model from the list below...",
-                on_change=lambda _: update_data_from_model(),
+                on_change=lambda e: update_data_from_modelname( e.value ),
             ).classes("flex-1")
 
             model_list_refresh = ui.button("Refresh List", on_click=refresh_model_list, icon="refresh").classes("mt-4")
 
         with ui.row().classes("w-full gap-4 mt-4 items-end"):
-            ctx, temp, top_p, top_k, shard_balance = selected_data_for_model( next(iter(available_model_names()), None) )
+            #ctx, temp, top_p, top_k, shard_balance = selected_data_for_model( next(iter(available_model_names()), None) )
+            M = model_utils.get_model_by_name(model_select.value)
             context_select = ui.select(
                 options=utils.configured_context_options(),
-                value=ctx,#utils.normalize_context_size_for_select( ctx ),
+                value=M.ctxsize,#ctx,#utils.normalize_context_size_for_select( ctx ),
                 label="Context size (0 = auto)",
             ).classes("flex-[2]")
 
             temperature_select = ui.select(
                 options=[f"{i / 10:.1f}" for i in range(1, 11)],
-                value=f"{float(temp):.1f}",
+                value=f"{float(M.temperature):.1f}",
                 label="Temperature",
             ).classes("flex-[1]")
 
             top_p_input = ui.input(
-                value="0.9",
+                value=M.top_p,#"0.9",
                 label="Top_p",
             ).classes("flex-[1]")
             
             top_k_input = ui.input(
-                value="40",
+                value=M.top_k,#"40",
                 label="Top_k",
             ).classes("flex-[1]")
 
@@ -824,8 +806,9 @@ with ui.column().classes("w-full max-w-4xl mx-auto p-4 gap-4"):
             run_local_only = bool(run_local_only_checkbox.value)
 
             model_name_for_default = str(model_select.value) if model_select.value else None
-            _ctx, _temp, _top_p, _top_k, persisted_shard_balance = selected_data_for_model(model_name_for_default)
-            _shard_balance = str(persisted_shard_balance or settings.DEFAULT_SHARD_BALANCE)
+            #_ctx, _temp, _top_p, _top_k, persisted_shard_balance = selected_data_for_model(model_name_for_default)
+            M = model_utils.get_model_by_name( model_name_for_default )
+            _shard_balance = str(M.shard_balance or settings.DEFAULT_SHARD_BALANCE)
 
             if not run_local_only:
                 requested_shard_balance = await ask_shard_balance(_shard_balance)
@@ -916,12 +899,6 @@ emit("GUI loaded", None)
 emit(f"Models directory: {settings.MODEL_BASE_DIR}", None)
 emit(f"Available models: {len(model_utils.AVAILABLE_MODELS)}", None)
 emit(f"NiceGUI listening on http://{settings.UI_HOST}:{settings.UI_PORT}", None)
-
-#from nicegui.context import client
-#ui.label(f'URL: {client.request.url}')
-#ui.label(f'Path: {client.request.url.path}')
-##ui.label(f'Query: {client.request.url.query}')
-#emit(f"URL={client.request.url}")
 
 #_____________________________________________________________________________
 ui.run(

@@ -21,14 +21,17 @@ def get_llama_command(
         top_p: float = 0.8,
         top_k: int = 40,
         load_mmproj: bool = False,
-        gpus: str | None = None,
+        gpus: str = None,
         ) -> list[str]:
     
+    if not files:
+        raise ValueError("files must not be None")
+
     if not run_local_only:
         for rpc_server in settings.RPC_SERVERS:
             emit(f"-> Checking remote rpc: {rpc_server.hostname}:{rpc_server.tcpport}", log_sink)
             logger.info(f"DEBUG - {rpc_server}")
-            rpc.ensure_remote_rpc(5, rpc_server, log_sink=log_sink)
+            rpc.ensure_remote_rpc(rpc_server, log_sink=log_sink)
 
     all_endpoints = []
     all_endpoints.extend(f"{s.hostname}:{s.tcpport}" for s in settings.RPC_SERVERS)

@@ -25,8 +25,7 @@ def tcp_connect(host: str, port: int, timeout_seconds: int = 2) -> bool:
         return False
 
 #__________________________________________________________________________________________
-def ensure_remote_rpc(timeout: int, 
-                      rpc: Server,
+def ensure_remote_rpc(rpc: Server,
                       log_sink: LogSink = None, 
                       ) -> None:
     
