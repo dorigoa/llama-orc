@@ -18,7 +18,7 @@ from llama_command import get_llama_command
 from config_manager import get_settings
 from logging_utils import emit, setup_console_logging
 import model_utils
-import model_finder
+#import model_finder
 import utils
 import persist
 
@@ -87,7 +87,7 @@ def update_data_from_modelname( modelname: str ) -> None:
     update_data_from_model( model_utils.get_model_by_name( modelname ) )
 
 #_____________________________________________________________________________
-def update_data_from_model( model: Model ) -> None:
+def update_data_from_model( M: Model ) -> None:
     
     #M = model_utils.get_model_by_name( modelname )
 
@@ -107,7 +107,7 @@ def refresh_model_list() -> None:
     models = model_utils.get_available_model_names( refresh = False ) # refresh has been already done in the previous call
 
     selected_model = model_utils.get_last_started_model()
-    model_select.set_options(models, value=selected_model)
+    model_select.set_options(models, value=selected_model.model_name)
 
     update_data_from_model( selected_model )
     emit(f"Model list refreshed: {len(models)} models found", ui_log)
@@ -288,14 +288,15 @@ class LlamaManager:
 
     #_____________________________________________________________________________________
     async def start_server(self, 
-                           model_name: str, 
-                           configured: Any, 
-                           context_size: int, 
-                           temperature: float, 
-                           top_p: float, 
-                           top_k: int, 
-                           shard_balance: str, 
-                           load_mmproj: bool,
+                           M: Model,
+#                           model_name: str, 
+#                           configured: Any, 
+#                           context_size: int, 
+#                           temperature: float, 
+#                           top_p: float, 
+#                           top_k: int, 
+#                           shard_balance: str, 
+#                           load_mmproj: bool,
                            run_local_only: bool = False,) -> bool:
         if self.is_running():
             msg = "llama-server is already running"
@@ -827,14 +828,9 @@ with ui.column().classes("w-full max-w-4xl mx-auto p-4 gap-4"):
 
                 
             model_name = str(model_select.value)
-            configured = model_utils.AVAILABLE_MODELS[model_name]
+            m = model_utils.get_model_by_name[model_name]
             started = await manager.start_server(model_name, 
-                                                 configured, 
-                                                 context_size, 
-                                                 temperature, 
-                                                 top_p, top_k, 
-                                                 _shard_balance, 
-                                                 mmproj_select.value,
+                                                 m,
                                                  run_local_only,)
 
             if started:
@@ -897,7 +893,7 @@ ui.timer(0.5, detect_existing_llama_server, once=True)
 
 emit("GUI loaded", None)
 emit(f"Models directory: {settings.MODEL_BASE_DIR}", None)
-emit(f"Available models: {len(model_utils.AVAILABLE_MODELS)}", None)
+emit(f"Available models: {len(model_utils.get_available_model_names())}", None)
 emit(f"NiceGUI listening on http://{settings.UI_HOST}:{settings.UI_PORT}", None)
 
 #_____________________________________________________________________________

@@ -3,7 +3,7 @@ from config_manager import get_settings
 from logging_utils import emit, LogSink, setup_console_logging
 
 #import devices
-from model_finder import ModelFiles
+#from model_finder import ModelFiles
 import rpc
 
 settings = get_settings()

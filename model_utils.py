@@ -86,7 +86,7 @@ def _discover_available_models( ) -> list[Model]:
             )
         else:
             M = Model(
-                model_name      = m,
+                model_name      = m.name,
                 model_path      = m / f"{m.name}.gguf",
                 mmproj_path     = pmmproj,
                 ctxsize         = settings.DEFAULT_CONTEXT_SIZE,
