@@ -825,11 +825,8 @@ with ui.column().classes("w-full max-w-4xl mx-auto p-4 gap-4"):
                 else:
                     _shard_balance = requested_shard_balance
 
-                
-            model_name = str(model_select.value)
-            m = model_utils.get_model_by_name()
-            started = await manager.start_server(model_name, 
-                                                 m,
+            m = model_utils.get_model_by_name(str(model_select.value))
+            started = await manager.start_server(m,
                                                  run_local_only,)
 
             if started:
